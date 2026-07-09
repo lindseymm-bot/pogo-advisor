@@ -869,17 +869,29 @@ async function renderResult(canonName, fromList = false) {
                         normalizeKey(n) === normalizeKey(pokeApiName(canonName).replace(/-/g,' '));
       const evoScore = PVP_OVERALL[n] || PVP_OVERALL[capitalize(n)];
       const evoGym = GYM_DATA[n] || GYM_DATA[capitalize(n)];
-      // Show best score: prefer highest of PvP/Gym
       const pvpVal = evoScore || 0;
       const gymVal = (evoGym && evoGym.score) || 0;
       const scoreStr = pvpVal >= gymVal && pvpVal > 0 ? `PvP ${pvpVal}` : gymVal > 0 ? `Gym ${gymVal}` : '';
       const clickAttr = isCurrent ? '' : `onclick="lookupEvoMon('${n.replace(/'/g, "\\'")}')" title="Click to look up ${n}"`;
+      // Check if this evo stage has a Mega
+      const stageMega = MEGA_DATA[n] || MEGA_DATA[capitalize(n)];
+      const megaNames = stageMega ? stageMega.into.split(' or ').map(s => s.trim()) : [];
+      const megaBlocks = megaNames.map(megaName => {
+        const slug = megaName.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'');
+        const tierBadge = '<span style="font-size:0.65rem;background:#2471a3;color:#fff;border-radius:4px;padding:1px 5px;margin-top:2px;display:inline-block">' + stageMega.tier + '-Tier</span>';
+        return '<span class="evo-arrow" style="color:#5dade2">⤳</span>'
+          + '<div class="evo-mon" style="opacity:0.85;border:1px solid #2471a3;border-radius:8px;padding:4px">'
+          + '<img src="https://img.pokemondb.net/sprites/home/normal/' + slug + '.png" onerror="this.src=\'https://img.pokemondb.net/sprites/home/normal/substitute.png\'" />'
+          + '<span class="evo-name" style="color:#5dade2">' + megaName + '</span>'
+          + tierBadge
+          + '</div>';
+      }).join('');
       return `${i > 0 ? '<span class="evo-arrow">→</span>' : ''}
         <div class="evo-mon ${isCurrent ? 'current' : ''}" ${clickAttr}>
           <img src="${imgUrl(n)}" onerror="this.src='https://img.pokemondb.net/sprites/home/normal/substitute.png'" />
           <span class="evo-name">${n}</span>
           ${scoreStr ? `<span class="evo-score">${scoreStr}</span>` : ''}
-        </div>`;
+        </div>${megaBlocks}`;
     }).join('');
   }
 
