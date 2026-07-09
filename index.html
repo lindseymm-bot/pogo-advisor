@@ -1128,9 +1128,14 @@ async function renderResult(canonName, fromList = false) {
         </div>
         <div class="score-box">
           <div class="score-label">Raid Tier</div>
-          <div class="score-val ${RAID_ELITE.has(canonName) ? 'high' : RAID_GOOD.has(canonName) ? 'mid' : 'none'}">
-            ${RAID_ELITE.has(canonName) ? 'Elite' : RAID_GOOD.has(canonName) ? 'Good' : '—'}
-          </div>
+          ${(() => {
+            const megaTier = MEGA_DATA[canonName]?.tier;
+            if (RAID_ELITE.has(canonName) || megaTier === 'S') return '<div class="score-val high">Elite' + (megaTier === 'S' ? ' · Mega S' : '') + '</div>';
+            if (RAID_GOOD.has(canonName) || megaTier === 'A') return '<div class="score-val mid">' + (RAID_GOOD.has(canonName) ? 'Good' : '') + (megaTier === 'A' ? (RAID_GOOD.has(canonName) ? ' · Mega A' : 'Mega A') : '') + '</div>';
+            if (megaTier === 'B') return '<div class="score-val mid">Mega B</div>';
+            if (megaTier === 'C') return '<div class="score-val none">Mega C</div>';
+            return '<div class="score-val none">—</div>';
+          })()}
         </div>
         <div class="score-box">
           <div class="score-label">Max Battle</div>
