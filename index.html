@@ -570,7 +570,15 @@ const POKEMONDB_SLUG_MAP = {
   'darmanitan (galarian)':'darmanitan-galarian-standard','darmanitan (galarian) (zen mode)':'darmanitan-galarian-zen',
 };
 
+// Pokémon whose sprites aren't on pokemondb — use PokeAPI home sprites instead
+const POKEAPI_SPRITE_MAP = {
+  'darmanitan (galarian)': '10177',
+  'darmanitan (galarian zen)': '10178',
+};
+
 function imgUrl(name) {
+  const pokeapiId = POKEAPI_SPRITE_MAP[name.toLowerCase().replace(/\s*\(shadow\)/i,'').trim()];
+  if (pokeapiId) return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/home/${pokeapiId}.png`;
   const stripped = name.replace(/\s*\(Shadow\)/i,'').trim();
   const key = stripped.toLowerCase();
   if (POKEMONDB_SLUG_MAP[key]) return `https://img.pokemondb.net/sprites/home/normal/${POKEMONDB_SLUG_MAP[key]}.png`;
