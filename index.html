@@ -868,17 +868,31 @@ function getSuggestedTeammates(name, leagueKey) {
   return { me, counters: me.counters, teammates: scores.slice(0, 3) };
 }
 
+// Some Pokemon are stored under a different key in score data (e.g. form variants)
+const DATA_NAME_MAP = {
+  'Keldeo': 'Keldeo (Ordinary)',
+  'Meloetta': 'Meloetta (Aria)',
+  'Shaymin': 'Shaymin (Land)',
+  'Giratina': 'Giratina (Altered)',
+  'Wormadam': 'Wormadam (Plant)',
+  'Tornadus': 'Tornadus (Incarnate)',
+  'Thundurus': 'Thundurus (Incarnate)',
+  'Landorus': 'Landorus (Incarnate)',
+};
+
 async function renderResult(canonName, fromList = false) {
   if (!fromList) currentTagContext = null;
   const resultDiv = document.getElementById('result');
   resultDiv.innerHTML = '<div class="card" style="text-align:center;color:#888">Loading…</div>';
 
-  const pvpScore    = PVP_OVERALL[canonName] || null;
-  const gymData     = GYM_DATA[canonName]    || null;
-  const gl = PVP_GREAT[canonName]  || null;
-  const ul = PVP_ULTRA[canonName]  || null;
-  const ml = PVP_MASTER[canonName] || null;
-  const showcaseScore = SHOWCASE_DATA[canonName] || null;
+  // Resolve aliases for data lookups
+  const dataName = DATA_NAME_MAP[canonName] || canonName;
+  const pvpScore    = PVP_OVERALL[dataName]    || PVP_OVERALL[canonName]    || null;
+  const gymData     = GYM_DATA[dataName]       || GYM_DATA[canonName]       || null;
+  const gl = PVP_GREAT[dataName]  || PVP_GREAT[canonName]  || null;
+  const ul = PVP_ULTRA[dataName]  || PVP_ULTRA[canonName]  || null;
+  const ml = PVP_MASTER[dataName] || PVP_MASTER[canonName] || null;
+  const showcaseScore = SHOWCASE_DATA[dataName] || SHOWCASE_DATA[canonName] || null;
 
   // Fetch all PokéAPI data (types, stats, species info, evo chain) in parallel
   const pokeData = await fetchPokeData(canonName);
@@ -1009,7 +1023,7 @@ async function renderResult(canonName, fromList = false) {
 
   // ── Top movesets card (Raid DPS + PvP per league)
   const msEntry = (pokeData?.dexId != null) ? MOVESETS[pokeData.dexId] : null;
-  const pvpEntry = PVP_MOVESETS[canonName] || null;
+  const pvpEntry = PVP_MOVESETS[dataName] || PVP_MOVESETS[canonName] || null;
   const fmtMove = m => m.replace(/\s*\*$/, ' <span class="ms-legacy" title="Legacy/Elite move">★</span>');
 
   // Raid/Gym DPS section
