@@ -644,7 +644,7 @@ async function fetchPokeData(name) {
       isBaby:      spec.is_baby,
       generation:  GEN_MAP[spec.generation?.name] || 0,
       genus, pokedexEntry,
-      evoChain: chain ? flattenChain(chain.chain) : null,
+      evoChain: chain ? getEvoChain(chain.chain, name) : null,
     };
   } catch(e) { return null; }
 }
@@ -656,6 +656,26 @@ function flattenChain(node, acc = []) {
     flattenChain(next, acc);
   }
   return acc;
+}
+
+// Find only the branch of the evo chain that contains the target pokemon
+function findChainBranch(node, targetKey) {
+  const name = capitalize(node.species.name.replace(/-/g, ' '));
+  if (normalizeKey(name) === targetKey) return [name];
+  for (const next of (node.evolves_to || [])) {
+    const branch = findChainBranch(next, targetKey);
+    if (branch) return [name, ...branch];
+  }
+  return null;
+}
+
+function getEvoChain(rootNode, targetName) {
+  const targetKey = normalizeKey(targetName);
+  // Try to find the specific branch containing this pokemon
+  const branch = findChainBranch(rootNode, targetKey);
+  if (branch) return branch;
+  // Fallback: if branching (e.g. Eevee), show all but cap at reasonable length
+  return flattenChain(rootNode);
 }
 
 function capitalize(s) {
