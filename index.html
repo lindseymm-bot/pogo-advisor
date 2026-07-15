@@ -1278,8 +1278,7 @@ async function renderResult(canonName, fromList = false) {
 // EVO CHAIN CLICK-THROUGH
 // =====================================================================
 function lookupEvoMon(name) {
-  const canon = findPokemon(name);
-  if (!canon) return;
+  const canon = findPokemon(name) || name;
   document.getElementById('search').value = canon;
   window.scrollTo(0, 0);
   renderResult(canon);
