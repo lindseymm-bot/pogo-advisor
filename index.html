@@ -645,37 +645,55 @@ async function fetchPokeData(name) {
       generation:  GEN_MAP[spec.generation?.name] || 0,
       genus, pokedexEntry,
       evoChain: chain ? getEvoChain(chain.chain, name) : null,
+      evoDisplay: chain ? getEvoDisplay(chain.chain, name) : null,
     };
   } catch(e) { return null; }
 }
 
-function flattenChain(node, acc = []) {
-  const name = capitalize(node.species.name.replace(/-/g, ' '));
-  acc.push(name);
-  for (const next of (node.evolves_to || [])) {
-    flattenChain(next, acc);
-  }
-  return acc;
-}
-
-// Find only the branch of the evo chain that contains the target pokemon
-function findChainBranch(node, targetKey) {
-  const name = capitalize(node.species.name.replace(/-/g, ' '));
-  if (normalizeKey(name) === targetKey) return flattenChain(node);
-  for (const next of (node.evolves_to || [])) {
-    const branch = findChainBranch(next, targetKey);
-    if (branch) return [name, ...branch];
-  }
-  return null;
-}
-
+// Returns flat array: ancestors → current mon → its direct children (for tags/advice logic)
 function getEvoChain(rootNode, targetName) {
   const targetKey = normalizeKey(targetName);
-  // Try to find the specific branch containing this pokemon
-  const branch = findChainBranch(rootNode, targetKey);
-  if (branch) return branch;
-  // Fallback: if branching (e.g. Eevee), show all but cap at reasonable length
-  return flattenChain(rootNode);
+  function findPath(node) {
+    const name = capitalize(node.species.name.replace(/-/g, ' '));
+    if (normalizeKey(name) === targetKey) {
+      const nexts = (node.evolves_to || []).map(n => capitalize(n.species.name.replace(/-/g, ' ')));
+      return nexts.length ? [name, ...nexts] : [name];
+    }
+    for (const next of (node.evolves_to || [])) {
+      const branch = findPath(next);
+      if (branch) return [name, ...branch];
+    }
+    return null;
+  }
+  // fallback: full flatten
+  function flatten(node, acc = []) {
+    acc.push(capitalize(node.species.name.replace(/-/g, ' ')));
+    for (const n of (node.evolves_to || [])) flatten(n, acc);
+    return acc;
+  }
+  return findPath(rootNode) || flatten(rootNode);
+}
+
+// Returns display stages: string for linear, string[] for branching options at that stage
+function getEvoDisplay(rootNode, targetName) {
+  const targetKey = normalizeKey(targetName);
+  function buildDisplay(node) {
+    const name = capitalize(node.species.name.replace(/-/g, ' '));
+    const nexts = node.evolves_to || [];
+    if (!nexts.length) return [name];
+    if (nexts.length === 1) return [name, ...buildDisplay(nexts[0])];
+    return [name, nexts.map(n => capitalize(n.species.name.replace(/-/g, ' ')))];
+  }
+  function findAndBuild(node) {
+    const name = capitalize(node.species.name.replace(/-/g, ' '));
+    if (normalizeKey(name) === targetKey) return buildDisplay(node);
+    for (const next of (node.evolves_to || [])) {
+      const result = findAndBuild(next);
+      if (result) return [name, ...result];
+    }
+    return null;
+  }
+  return findAndBuild(rootNode) || buildDisplay(rootNode);
 }
 
 function capitalize(s) {
@@ -897,36 +915,27 @@ async function renderResult(canonName, fromList = false) {
   // Fetch all PokéAPI data (types, stats, species info, evo chain) in parallel
   const pokeData = await fetchPokeData(canonName);
   const evoChain = pokeData?.evoChain || null;
+  const evoDisplay = pokeData?.evoDisplay || null;
 
   const tags   = computeTags(canonName, pvpScore, gymData, evoChain, pokeData);
   const advice = buildAdvice(canonName, pvpScore, gymData, evoChain, tags);
 
   // Build evolution HTML
   let evoHtml = '';
-  if (evoChain && evoChain.length > 0) {
+  if ((evoDisplay || evoChain) && (evoDisplay || evoChain).length > 0) {
     const baseName = pokeApiName(canonName);
-    evoHtml = evoChain.map((n, i) => {
-      const apiN = n.toLowerCase().replace(/\s+/g, '-');
-      const isCurrent = normalizeKey(apiN) === normalizeKey(baseName) ||
-                        normalizeKey(n) === normalizeKey(pokeApiName(canonName).replace(/-/g,' '));
-      const evoScore = PVP_OVERALL[n] || PVP_OVERALL[capitalize(n)];
-      const evoGym = GYM_DATA[n] || GYM_DATA[capitalize(n)];
-      const pvpVal = evoScore || 0;
-      const gymVal = (evoGym && evoGym.score) || 0;
-      const scoreStr = pvpVal >= gymVal && pvpVal > 0 ? `PvP ${pvpVal}` : gymVal > 0 ? `Gym ${gymVal}` : '';
-      const clickAttr = isCurrent ? '' : `onclick="lookupEvoMon('${n.replace(/'/g, "\\'")}')" title="Click to look up ${n}"`;
-      // Check if this evo stage has a Mega
+    const stages = evoDisplay || evoChain;
+
+    function megaBlocksForMon(n) {
       const stageMega = MEGA_DATA[n] || MEGA_DATA[capitalize(n)];
-      // Fix split: "Mega Charizard X or Y" → ["Mega Charizard X", "Mega Charizard Y"]
-      const rawInto = stageMega ? stageMega.into : '';
-      const megaNames = rawInto ? rawInto.split(' or ').map((s,i,arr) => {
+      if (!stageMega) return '';
+      const rawInto = stageMega.into || '';
+      const megaNames = rawInto ? rawInto.split(' or ').map((s, mi, arr) => {
         s = s.trim();
-        // If fragment is just a suffix (single word like "Y"), prepend the base from first item
-        if (i > 0 && !s.includes(' ')) s = arr[0].trim().replace(/\s+\S+$/, ' ' + s);
+        if (mi > 0 && !s.includes(' ')) s = arr[0].trim().replace(/\s+\S+$/, ' ' + s);
         return s;
       }) : [];
-      const megaBlocks = megaNames.map(megaName => {
-        // pokemondb format: "Mega Charizard X" → "charizard-mega-x", "Mega Gengar" → "gengar-mega"
+      return megaNames.map(megaName => {
         const words = megaName.toLowerCase().replace(/[^a-z0-9\s]/g,'').trim().split(/\s+/).filter(w => w !== 'mega');
         const lastWord = words[words.length - 1];
         const hasForm = words.length > 1 && lastWord.length <= 2;
@@ -937,15 +946,40 @@ async function renderResult(canonName, fromList = false) {
           + '<div class="evo-mon" style="opacity:0.85;border:1px solid #2471a3;border-radius:8px;padding:4px">'
           + '<img src="https://img.pokemondb.net/sprites/home/normal/' + slug + '.png" onerror="this.src=\'https://img.pokemondb.net/sprites/home/normal/substitute.png\'" />'
           + '<span class="evo-name" style="color:#5dade2">' + megaName + '</span>'
-          + tierBadge
-          + '</div>';
+          + tierBadge + '</div>';
       }).join('');
-      return `${i > 0 ? '<span class="evo-arrow">→</span>' : ''}
-        <div class="evo-mon ${isCurrent ? 'current' : ''}" ${clickAttr}>
+    }
+
+    function renderEvoBlock(n, isCurrent) {
+      const evoScore = PVP_OVERALL[n] || PVP_OVERALL[capitalize(n)];
+      const evoGym = GYM_DATA[n] || GYM_DATA[capitalize(n)];
+      const pvpVal = evoScore || 0;
+      const gymVal = (evoGym && evoGym.score) || 0;
+      const scoreStr = pvpVal >= gymVal && pvpVal > 0 ? `PvP ${pvpVal}` : gymVal > 0 ? `Gym ${gymVal}` : '';
+      const clickAttr = isCurrent ? '' : `onclick="lookupEvoMon('${n.replace(/'/g, "\\'")}')" title="Click to look up ${n}"`;
+      return `<div class="evo-mon ${isCurrent ? 'current' : ''}" ${clickAttr}>
           <img src="${imgUrl(n)}" onerror="this.src='https://img.pokemondb.net/sprites/home/normal/substitute.png'" />
           <span class="evo-name">${n}</span>
           ${scoreStr ? `<span class="evo-score">${scoreStr}</span>` : ''}
-        </div>${megaBlocks}`;
+        </div>${megaBlocksForMon(n)}`;
+    }
+
+    function isCurrentMon(n) {
+      const apiN = n.toLowerCase().replace(/\s+/g, '-');
+      return normalizeKey(apiN) === normalizeKey(baseName) ||
+             normalizeKey(n) === normalizeKey(pokeApiName(canonName).replace(/-/g,' '));
+    }
+
+    evoHtml = stages.map((stage, i) => {
+      const arrow = i > 0 ? '<span class="evo-arrow">→</span>' : '';
+      if (Array.isArray(stage)) {
+        // Branching options — render side by side with "or" between
+        const branchHtml = stage.map(n => renderEvoBlock(n, isCurrentMon(n))).join(
+          '<span style="padding:0 4px;color:#aaa;font-size:0.75rem;align-self:center">or</span>'
+        );
+        return arrow + '<span style="display:inline-flex;align-items:flex-start;gap:2px">' + branchHtml + '</span>';
+      }
+      return arrow + renderEvoBlock(stage, isCurrentMon(stage));
     }).join('');
   }
 
